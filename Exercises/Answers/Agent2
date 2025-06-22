@@ -1,0 +1,47 @@
+import os
+from typing import TypedDict, List, Union
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_openai import AzureChatOpenAI
+from langgraph.graph import StateGraph, START, END
+from dotenv import load_dotenv
+
+load_dotenv()
+
+conversation_history = []
+
+class AgentState(TypedDict):
+    messages: list[Union[HumanMessage, AIMessage]]
+    
+    
+llm = AzureChatOpenAI(
+    azure_deployment="gpt-4o",  # or your deployment
+    api_version=os.getenv("AZURE_OPENAI_DEPLOYMENT_VERSION"),  # or your api version
+    temperature=0.5,
+)
+
+def process(state: AgentState) -> AgentState:
+    response = llm.invoke(input=state['messages'])
+    state['messages'].append(AIMessage(response.content))
+    print(f"\nAI: {response.content}")
+    print(f"CURRENT STATE: \n{conversation_history}")
+    return state
+    
+
+graph = StateGraph(AgentState)
+graph.add_node("process", process)
+graph.set_entry_point("process")
+graph.set_finish_point("process")
+agent = graph.compile()
+
+
+user_input = input("Enter: ")
+while user_input != "exit":
+    conversation_history.append(HumanMessage(content=user_input))
+    result = agent.invoke({"messages": conversation_history})
+    conversation_history = result["messages"]
+    user_input = input("Enter: ")
+    
+    
+
+    
+

@@ -8,77 +8,83 @@ from langchain_core.tools import tool
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langchain import hub
 import os
-
 
 load_dotenv()
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
-
 @tool
-def add(a: int, b:int):
-    """This is an addition function that adds 2 numbers together"""
-
-    return a + b 
+def add(a: int, b: int):
+    """Function for addition."""
+    return a + b
 
 @tool
 def subtract(a: int, b: int):
-    """Subtraction function"""
+    "Function for subtraction."
     return a - b
 
 @tool
 def multiply(a: int, b: int):
-    """Multiplication function"""
+    "Function for multiplication."
     return a * b
 
-tools = [add, subtract, multiply]
+tools = [add, subtract, multiply] 
 
-model = AzureChatOpenAI(
-    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-    api_version=os.getenv("AZURE_OPENAI_DEPLOYMENT_VERSION"),
-    temperature=0.99).bind_tools(tools)
+llm = AzureChatOpenAI(
+    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_VERSION"),
+    api_version=os.getenv("AZURE_OPENAI_DEPLOYMENT_VERSION")
+).bind_tools(tools)
 
-
-def model_call(state:AgentState) -> AgentState:
-    system_prompt = SystemMessage(content=
-        "You are my AI assistant, please answer my query to the best of your ability."
-    )
-    response = model.invoke([system_prompt, *state['messages']])
+def model_call(state: AgentState):
+    system_prompt = SystemMessage(content="You are a helpful AI assistant")
+    response = llm.invoke([system_prompt, *state['messages']])
     return {"messages": [response]}
 
-
-def should_continue(state: AgentState): 
-    messages = state["messages"]
+def decider(state: AgentState):
+    messages = state['messages']
     last_message = messages[-1]
-    if not last_message.tool_calls: 
+    if not last_message.tool_calls:
         return "end"
     else:
         return "continue"
+        
     
 
+
+
 graph = StateGraph(AgentState)
-graph.add_node("our_agent", model_call)
 
-
-tool_node = ToolNode(tools=tools)
+graph.add_node("agent", model_call)
+tool_node = ToolNode(tools)
 graph.add_node("tools", tool_node)
 
-graph.set_entry_point("our_agent")
+graph.set_entry_point("agent")
+
 
 graph.add_conditional_edges(
-    "our_agent",
-    should_continue,
+    "agent",
+    decider,
     {
         "continue": "tools",
         "end": END,
-    },
+    }
+    
 )
 
-graph.add_edge("tools", "our_agent")
+graph.add_edge("tools", "agent")
 
 app = graph.compile()
+
+
+
+
+
+
+
+
 
 def print_stream(stream):
     for s in stream:
@@ -88,5 +94,10 @@ def print_stream(stream):
         else:
             message.pretty_print()
 
-inputs = {"messages": [("user", "Add 40689 + 12 and then multiply the result by 6. Also tell me a joke about UCL Computer Science MSc please.")]}
+inputs = {"messages": [("user", "Add 40689 + 12 and then multiply the result by 6. Also tell me a joke about UCL please.")]}
 print_stream(app.stream(inputs, stream_mode="values"))
+    
+
+
+
+
